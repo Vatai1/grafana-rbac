@@ -77,7 +77,7 @@ func ProvideService(
 
 	api.NewAccessControlAPI(routeRegister, accessControl, service, userService).RegisterAPIEndpoints()
 	acProvisioningDir := filepath.Join(cfg.ProvisioningPath, "access-control")
-	customroles.RegisterAPI(routeRegister, db, accessControl, service, acProvisioningDir)
+	customroles.RegisterAPI(routeRegister, db, accessControl, service, cache, acProvisioningDir)
 	customroles.Provision(context.Background(), db, acProvisioningDir)
 	if err := accesscontrol.DeclareFixedRoles(service); err != nil {
 		return nil, err

@@ -8,6 +8,7 @@
 |---|---|
 | Права на каждый источник данных (Query / Edit / Admin) для пользователей, команд и ролей; UI: вкладка «Разрешения» у источника | `pkg/services/accesscontrol/ossaccesscontrol/datasource.go`, `pkg/services/datasources/guardian/` |
 | Кастомные роли: CRUD и назначение пользователям/командам, защита от выдачи прав, которых нет у самого администратора | `pkg/services/accesscontrol/customroles/`, API `/api/access-control/roles`, `/users/:id/roles`, `/teams/:id/roles` |
+| UI ролей: «Администрирование → Пользователи и доступ → Роли» (создание, разрешения, назначение); выбор ролей в списке пользователей, на странице команды и сервисного аккаунта | `public/app/features/custom-roles/`, `RolePicker` (включается фичей `accesscontrol` в `licensing/oss.go`) |
 | Роли из YAML (формат Grafana Enterprise + `orgName`, `users`) | `deploy/provisioning/access-control/*.yaml`, `POST /api/admin/provisioning/access-control/reload` |
 | Без плашек Enterprise/Cloud | `isOpenSourceBuildOrUnlicenced()`, футер, каталог плагинов, env в `docker-compose.yml` |
 

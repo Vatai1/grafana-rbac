@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/grafana/pkg/api/response"
 	"github.com/grafana/grafana/pkg/api/routing"
 	"github.com/grafana/grafana/pkg/infra/db"
+	"github.com/grafana/grafana/pkg/infra/localcache"
 	ac "github.com/grafana/grafana/pkg/services/accesscontrol"
 	contextmodel "github.com/grafana/grafana/pkg/services/contexthandler/model"
 	"github.com/grafana/grafana/pkg/services/org"
@@ -68,18 +69,21 @@ type Role struct {
 	Name        string       `json:"name"`
 	DisplayName string       `json:"displayName"`
 	Description string       `json:"description"`
+	Group       string       `json:"group"`
 	Version     int64        `json:"version"`
 	Permissions []Permission `json:"permissions"`
 }
 
 type API struct {
-	db  db.DB
-	ac  ac.AccessControl
-	svc ac.Service
+	db    db.DB
+	ac    ac.AccessControl
+	svc   ac.Service
+	cache *localcache.CacheService // acimpl's permission cache; team permissions are cached per team
 }
 
-func RegisterAPI(router routing.RouteRegister, sql db.DB, accessControl ac.AccessControl, service ac.Service, provisioningDir string) {
-	a := &API{db: sql, ac: accessControl, svc: service}
+func RegisterAPI(router routing.RouteRegister, sql db.DB, accessControl ac.AccessControl, service ac.Service,
+	cache *localcache.CacheService, provisioningDir string) {
+	a := &API{db: sql, ac: accessControl, svc: service, cache: cache}
 	authorize := ac.Middleware(accessControl)
 	router.Post("/api/admin/provisioning/access-control/reload",
 		authorize(ac.EvalPermission(ActionProvisioningReload, ScopeProvisionersAccessControl)), routing.Wrap(a.reloadProvisioning(provisioningDir)))
@@ -89,12 +93,16 @@ func RegisterAPI(router routing.RouteRegister, sql db.DB, accessControl ac.Acces
 		r.Get("/roles/:uid", authorize(ac.EvalPermission(ActionRolesRead)), routing.Wrap(a.getRole))
 		r.Put("/roles/:uid", authorize(ac.EvalPermission(ActionRolesWrite)), routing.Wrap(a.updateRole))
 		r.Delete("/roles/:uid", authorize(ac.EvalPermission(ActionRolesDelete)), routing.Wrap(a.deleteRole))
+		r.Get("/roles/:uid/assignments", authorize(ac.EvalAll(ac.EvalPermission(ActionUsersRolesRead), ac.EvalPermission(ActionTeamsRolesRead))), routing.Wrap(a.getAssignments))
 
 		r.Get("/users/:id/roles", authorize(ac.EvalPermission(ActionUsersRolesRead)), routing.Wrap(a.listAssigned(userTarget)))
 		r.Post("/users/:id/roles", authorize(ac.EvalPermission(ActionUsersRolesAdd)), routing.Wrap(a.assign(userTarget)))
+		r.Put("/users/:id/roles", authorize(ac.EvalAll(ac.EvalPermission(ActionUsersRolesAdd), ac.EvalPermission(ActionUsersRolesRemove))), routing.Wrap(a.setAssigned(userTarget)))
 		r.Delete("/users/:id/roles/:uid", authorize(ac.EvalPermission(ActionUsersRolesRemove)), routing.Wrap(a.unassign(userTarget)))
+		r.Post("/users/roles/search", authorize(ac.EvalPermission(ActionUsersRolesRead)), routing.Wrap(a.searchUsersRoles))
 		r.Get("/teams/:id/roles", authorize(ac.EvalPermission(ActionTeamsRolesRead)), routing.Wrap(a.listAssigned(teamTarget)))
 		r.Post("/teams/:id/roles", authorize(ac.EvalPermission(ActionTeamsRolesAdd)), routing.Wrap(a.assign(teamTarget)))
+		r.Put("/teams/:id/roles", authorize(ac.EvalAll(ac.EvalPermission(ActionTeamsRolesAdd), ac.EvalPermission(ActionTeamsRolesRemove))), routing.Wrap(a.setAssigned(teamTarget)))
 		r.Delete("/teams/:id/roles/:uid", authorize(ac.EvalPermission(ActionTeamsRolesRemove)), routing.Wrap(a.unassign(teamTarget)))
 	})
 }
@@ -134,6 +142,15 @@ func (a *API) listRoles(c *contextmodel.ReqContext) response.Response {
 	})
 	if err != nil {
 		return response.Error(http.StatusInternalServerError, "Failed to list roles", err)
+	}
+	if c.QueryBool("delegatable") {
+		delegatable := roles[:0]
+		for _, r := range roles {
+			if a.checkEscalation(c, r.Permissions) == nil {
+				delegatable = append(delegatable, r)
+			}
+		}
+		roles = delegatable
 	}
 	return response.JSON(http.StatusOK, roles)
 }
@@ -202,7 +219,7 @@ func (a *API) updateRole(c *contextmodel.ReqContext) response.Response {
 		return resp
 	}
 	var out Role
-	var users []int64
+	var users, teams []int64
 	err := a.db.WithTransactionalDbSession(c.Req.Context(), func(sess *db.Session) error {
 		r, err := getRole(sess, c.GetOrgID(), cmd.UID)
 		if err != nil {
@@ -229,7 +246,7 @@ func (a *API) updateRole(c *contextmodel.ReqContext) response.Response {
 		if err := insertPermissions(sess, r.ID, cmd.Permissions, now); err != nil {
 			return err
 		}
-		if users, err = assignedUsers(sess, r.ID); err != nil {
+		if users, teams, err = assignees(sess, r.ID); err != nil {
 			return err
 		}
 		out, err = toDTO(sess, r)
@@ -239,17 +256,18 @@ func (a *API) updateRole(c *contextmodel.ReqContext) response.Response {
 		return errResponse(err)
 	}
 	a.clearCache(c.GetOrgID(), users...)
+	a.clearTeams(c.GetOrgID(), teams...)
 	return response.JSON(http.StatusOK, out)
 }
 
 func (a *API) deleteRole(c *contextmodel.ReqContext) response.Response {
-	var users []int64
+	var users, teams []int64
 	err := a.db.WithTransactionalDbSession(c.Req.Context(), func(sess *db.Session) error {
 		r, err := getRole(sess, c.GetOrgID(), web.Params(c.Req)[":uid"])
 		if err != nil {
 			return err
 		}
-		if users, err = assignedUsers(sess, r.ID); err != nil {
+		if users, teams, err = assignees(sess, r.ID); err != nil {
 			return err
 		}
 		for _, q := range []string{"DELETE FROM user_role WHERE role_id = ?", "DELETE FROM team_role WHERE role_id = ?",
@@ -264,7 +282,67 @@ func (a *API) deleteRole(c *contextmodel.ReqContext) response.Response {
 		return errResponse(err)
 	}
 	a.clearCache(c.GetOrgID(), users...)
+	a.clearTeams(c.GetOrgID(), teams...)
 	return response.Success("Role deleted")
+}
+
+type assignedUser struct {
+	ID    int64  `json:"id" xorm:"id"`
+	UID   string `json:"uid" xorm:"uid"`
+	Login string `json:"login" xorm:"login"`
+	Name  string `json:"name" xorm:"name"`
+}
+
+type assignedTeam struct {
+	ID   int64  `json:"id" xorm:"id"`
+	UID  string `json:"uid" xorm:"uid"`
+	Name string `json:"name" xorm:"name"`
+}
+
+func (a *API) getAssignments(c *contextmodel.ReqContext) response.Response {
+	out := struct {
+		Users []assignedUser `json:"users"`
+		Teams []assignedTeam `json:"teams"`
+	}{Users: []assignedUser{}, Teams: []assignedTeam{}}
+	err := a.db.WithDbSession(c.Req.Context(), func(sess *db.Session) error {
+		r, err := getRole(sess, c.GetOrgID(), web.Params(c.Req)[":uid"])
+		if err != nil {
+			return err
+		}
+		if err := sess.SQL("SELECT u.id, u.uid, u.login, u.name FROM "+a.db.GetDialect().Quote("user")+" AS u"+
+			" INNER JOIN user_role AS ur ON ur.user_id = u.id WHERE ur.role_id = ? AND ur.org_id = ? ORDER BY u.login",
+			r.ID, r.OrgID).Find(&out.Users); err != nil {
+			return err
+		}
+		return sess.SQL("SELECT t.id, t.uid, t.name FROM team AS t"+
+			" INNER JOIN team_role AS tr ON tr.team_id = t.id WHERE tr.role_id = ? AND tr.org_id = ? ORDER BY t.name",
+			r.ID, r.OrgID).Find(&out.Teams)
+	})
+	if err != nil {
+		return errResponse(err)
+	}
+	return response.JSON(http.StatusOK, out)
+}
+
+// targetOrg is the org a role-assignment request applies to; only Grafana admins may act on another org.
+func targetOrg(c *contextmodel.ReqContext, requested int64) (int64, response.Response) {
+	if requested == 0 || requested == c.GetOrgID() {
+		return c.GetOrgID(), nil
+	}
+	if !c.SignedInUser.GetIsGrafanaAdmin() {
+		return 0, response.Error(http.StatusForbidden, "Only Grafana admins can manage roles in another organization", nil)
+	}
+	return requested, nil
+}
+
+func assignedRoles(sess *db.Session, t target, orgID, id int64) ([]Role, error) {
+	var stored []ac.Role
+	if err := sess.SQL("SELECT role.* FROM role INNER JOIN "+t.assignTable+" AS a ON a.role_id = role.id"+
+		" WHERE a.org_id = ? AND a."+t.idColumn+" = ? AND role.name LIKE ? ORDER BY role.name",
+		orgID, id, RolePrefix+"%").Find(&stored); err != nil {
+		return nil, err
+	}
+	return toDTOs(sess, stored)
 }
 
 func (a *API) listAssigned(t target) func(c *contextmodel.ReqContext) response.Response {
@@ -273,21 +351,126 @@ func (a *API) listAssigned(t target) func(c *contextmodel.ReqContext) response.R
 		if err != nil {
 			return response.Error(http.StatusBadRequest, "Invalid id", err)
 		}
+		orgID, resp := targetOrg(c, c.QueryInt64("targetOrgId"))
+		if resp != nil {
+			return resp
+		}
 		var roles []Role
 		err = a.db.WithDbSession(c.Req.Context(), func(sess *db.Session) error {
-			var stored []ac.Role
-			if err := sess.SQL("SELECT role.* FROM role INNER JOIN "+t.assignTable+" AS a ON a.role_id = role.id"+
-				" WHERE a.org_id = ? AND a."+t.idColumn+" = ? AND role.name LIKE ? ORDER BY role.name",
-				c.GetOrgID(), id, RolePrefix+"%").Find(&stored); err != nil {
-				return err
-			}
-			roles, err = toDTOs(sess, stored)
+			roles, err = assignedRoles(sess, t, orgID, id)
 			return err
 		})
 		if err != nil {
 			return response.Error(http.StatusInternalServerError, "Failed to list roles", err)
 		}
 		return response.JSON(http.StatusOK, roles)
+	}
+}
+
+type searchUsersRolesCmd struct {
+	UserIDs []int64 `json:"userIds"`
+	OrgID   int64   `json:"orgId"`
+}
+
+// searchUsersRoles returns custom roles per user, as used by the users list role column.
+func (a *API) searchUsersRoles(c *contextmodel.ReqContext) response.Response {
+	var cmd searchUsersRolesCmd
+	if err := web.Bind(c.Req, &cmd); err != nil {
+		return response.Error(http.StatusBadRequest, "Bad request data", err)
+	}
+	orgID, resp := targetOrg(c, cmd.OrgID)
+	if resp != nil {
+		return resp
+	}
+	out := make(map[int64][]Role, len(cmd.UserIDs))
+	err := a.db.WithDbSession(c.Req.Context(), func(sess *db.Session) error {
+		// ponytail: one query per user; fine for paged user lists, batch it if pages grow large
+		for _, id := range cmd.UserIDs {
+			roles, err := assignedRoles(sess, userTarget, orgID, id)
+			if err != nil {
+				return err
+			}
+			out[id] = roles
+		}
+		return nil
+	})
+	if err != nil {
+		return response.Error(http.StatusInternalServerError, "Failed to search roles", err)
+	}
+	return response.JSON(http.StatusOK, out)
+}
+
+type setRolesCmd struct {
+	RoleUIDs []string `json:"roleUids"`
+}
+
+// setAssigned replaces the custom roles of a user or team with the given set (role picker semantics).
+func (a *API) setAssigned(t target) func(c *contextmodel.ReqContext) response.Response {
+	return func(c *contextmodel.ReqContext) response.Response {
+		id, err := strconv.ParseInt(web.Params(c.Req)[":id"], 10, 64)
+		if err != nil {
+			return response.Error(http.StatusBadRequest, "Invalid id", err)
+		}
+		orgID, resp := targetOrg(c, c.QueryInt64("targetOrgId"))
+		if resp != nil {
+			return resp
+		}
+		var cmd setRolesCmd
+		if err := web.Bind(c.Req, &cmd); err != nil {
+			return response.Error(http.StatusBadRequest, "Bad request data", err)
+		}
+		err = a.db.WithTransactionalDbSession(c.Req.Context(), func(sess *db.Session) error {
+			member, err := sess.SQL(t.memberSQL, orgID, id).Exist()
+			if err != nil {
+				return err
+			}
+			if !member {
+				return errNotInOrg
+			}
+			current, err := assignedRoles(sess, t, orgID, id)
+			if err != nil {
+				return err
+			}
+			have := map[string]bool{}
+			for _, r := range current {
+				have[r.UID] = true
+			}
+			want := map[string]bool{}
+			for _, uid := range cmd.RoleUIDs {
+				want[uid] = true
+				if have[uid] {
+					continue
+				}
+				r, err := getRole(sess, orgID, uid)
+				if err != nil {
+					return err
+				}
+				perms, err := rolePermissions(sess, r.ID)
+				if err != nil {
+					return err
+				}
+				if resp := a.checkEscalation(c, perms); resp != nil {
+					return escalationErr{resp}
+				}
+				if err := assignOnce(sess, t, orgID, id, r.ID); err != nil {
+					return err
+				}
+			}
+			for _, r := range current {
+				if want[r.UID] {
+					continue
+				}
+				if _, err := sess.Exec("DELETE FROM "+t.assignTable+" WHERE org_id = ? AND "+t.idColumn+" = ? AND role_id = (SELECT id FROM role WHERE uid = ?)", orgID, id, r.UID); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return errResponse(err)
+		}
+		a.clearTarget(t, orgID, id)
+		return response.Success("Roles updated")
 	}
 }
 
@@ -335,9 +518,7 @@ func (a *API) assign(t target) func(c *contextmodel.ReqContext) response.Respons
 			return errResponse(err)
 		}
 		// ponytail: team assignments rely on the 60s team permission cache TTL; clear team members here if that lag matters
-		if t == userTarget {
-			a.clearCache(orgID, id)
-		}
+		a.clearTarget(t, orgID, id)
 		return response.Success("Role assigned")
 	}
 }
@@ -360,9 +541,7 @@ func (a *API) unassign(t target) func(c *contextmodel.ReqContext) response.Respo
 		if err != nil {
 			return errResponse(err)
 		}
-		if t == userTarget {
-			a.clearCache(orgID, id)
-		}
+		a.clearTarget(t, orgID, id)
 		return response.Success("Role removed")
 	}
 }
@@ -410,6 +589,20 @@ func (a *API) clearCache(orgID int64, userIDs ...int64) {
 	}
 }
 
+func (a *API) clearTeams(orgID int64, teamIDs ...int64) {
+	for _, id := range teamIDs {
+		a.cache.ExclusiveDelete(ac.GetTeamPermissionCacheKey(id, orgID))
+	}
+}
+
+func (a *API) clearTarget(t target, orgID, id int64) {
+	if t == userTarget {
+		a.clearCache(orgID, id)
+	} else {
+		a.clearTeams(orgID, id)
+	}
+}
+
 func errResponse(err error) response.Response {
 	var esc escalationErr
 	switch {
@@ -449,7 +642,7 @@ func rolePermissions(sess *db.Session, roleID int64) ([]Permission, error) {
 
 func toDTO(sess *db.Session, r *ac.Role) (Role, error) {
 	perms, err := rolePermissions(sess, r.ID)
-	return Role{UID: r.UID, Name: r.Name, DisplayName: r.DisplayName, Description: r.Description, Version: r.Version, Permissions: perms}, err
+	return Role{UID: r.UID, Name: r.Name, DisplayName: r.DisplayName, Description: r.Description, Group: r.Group, Version: r.Version, Permissions: perms}, err
 }
 
 func toDTOs(sess *db.Session, stored []ac.Role) ([]Role, error) {
@@ -480,8 +673,11 @@ func insertPermissions(sess *db.Session, roleID int64, perms []Permission, now t
 	return nil
 }
 
-func assignedUsers(sess *db.Session, roleID int64) ([]int64, error) {
-	var ids []int64
-	err := sess.Table("user_role").Where("role_id = ?", roleID).Cols("user_id").Find(&ids)
-	return ids, err
+// assignees returns the users and teams a role is directly assigned to.
+func assignees(sess *db.Session, roleID int64) (users, teams []int64, err error) {
+	if err = sess.Table("user_role").Where("role_id = ?", roleID).Cols("user_id").Find(&users); err != nil {
+		return nil, nil, err
+	}
+	err = sess.Table("team_role").Where("role_id = ?", roleID).Cols("team_id").Find(&teams)
+	return users, teams, err
 }

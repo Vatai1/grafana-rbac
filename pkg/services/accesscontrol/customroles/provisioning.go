@@ -291,10 +291,9 @@ func assignOnce(sess *db.Session, t target, orgID, id, roleID int64) error {
 
 func (a *API) reloadProvisioning(dir string) func(c *contextmodel.ReqContext) response.Response {
 	return func(c *contextmodel.ReqContext) response.Response {
-		changed, failed := Provision(c.Req.Context(), a.db, dir)
-		for orgID, ids := range changed {
-			a.clearCache(orgID, ids...)
-		}
+		_, failed := Provision(c.Req.Context(), a.db, dir)
+		a.cache.Flush() // reload can touch any user or team; it is a rare admin action
+
 		if failed > 0 {
 			return response.Error(http.StatusBadRequest, fmt.Sprintf("%d access-control provisioning entries failed, see server log", failed), nil)
 		}

@@ -123,6 +123,8 @@ export function getNavTitle(navId: string | undefined) {
       return t('nav.plugins.title', 'Plugins');
     case 'org-settings':
       return t('nav.org-settings.title', 'Default preferences');
+    case 'custom-roles':
+      return t('nav.custom-roles.title', 'Roles');
     case 'serviceaccounts':
       return t('nav.service-accounts.title', 'Service accounts');
     case 'admin':
@@ -286,6 +288,8 @@ export function getNavSubTitle(navId: string | undefined) {
       return t('nav.plugins.subtitle', 'Extend the Grafana experience with plugins');
     case 'org-settings':
       return t('nav.org-settings.subtitle', 'Manage preferences across an organization');
+    case 'custom-roles':
+      return t('nav.custom-roles.subtitle', 'Custom roles built from permissions and assigned to users and teams');
     case 'serviceaccounts':
       return t('nav.service-accounts.subtitle', 'Use service accounts to run automated workloads in Grafana');
     case 'global-users':

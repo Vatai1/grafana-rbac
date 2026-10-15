@@ -12607,6 +12607,10 @@
     "users": {
       "subtitle": "Invite and assign roles to users",
       "title": "Users"
+    },
+    "custom-roles": {
+      "title": "Roles",
+      "subtitle": "Custom roles built from permissions and assigned to users and teams"
     }
   },
   "navigation": {
@@ -17574,6 +17578,34 @@
     },
     "suggestions": {
       "scatter-plot": "Scatter plot"
+    }
+  },
+  "custom-roles": {
+    "list": {
+      "name": "Name",
+      "description": "Description",
+      "permissions": "Permissions",
+      "delete": "Delete role",
+      "new": "New role",
+      "empty": "No custom roles yet",
+      "delete-body": "The role will be removed from all users and teams.",
+      "delete-confirm": "Delete"
+    },
+    "edit": {
+      "new": "New role",
+      "name": "Name",
+      "name-desc": "Letters, digits, \".\", \"_\", \"-\" and \":\"",
+      "display-name": "Display name",
+      "description": "Description",
+      "permissions": "Permissions",
+      "permissions-help": "Action, e.g. dashboards:read, datasources:query; scope, e.g. folders:uid:<uid>, datasources:uid:<uid> or * (empty = any).",
+      "remove-permission": "Remove permission",
+      "add-permission": "Add permission",
+      "save": "Save",
+      "users": "Users",
+      "teams": "Teams",
+      "unassign": "Remove assignment",
+      "assign": "Assign"
     }
   }
 }

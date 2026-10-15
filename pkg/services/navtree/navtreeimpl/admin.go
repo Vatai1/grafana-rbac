@@ -136,6 +136,16 @@ func (s *ServiceImpl) getAdminNode(c *contextmodel.ReqContext) (*navtree.NavLink
 			Url:      s.cfg.AppSubURL + "/org/teams",
 		})
 	}
+	// Fork: custom roles management (pkg/services/accesscontrol/customroles).
+	if hasAccess(ac.EvalPermission("roles:read")) {
+		accessNodeLinks = append(accessNodeLinks, &navtree.NavLink{
+			Text:     "Roles",
+			Id:       "custom-roles",
+			SubTitle: "Custom roles built from permissions and assigned to users and teams",
+			Icon:     "lock",
+			Url:      s.cfg.AppSubURL + "/admin/roles",
+		})
+	}
 	if enableServiceAccount(s, c) {
 		accessNodeLinks = append(accessNodeLinks, &navtree.NavLink{
 			Text:     "Service accounts",

@@ -41,8 +41,9 @@ func (l *OSSLicensingService) LicenseURL(showAdminLicensingPage bool) string {
 	return "https://grafana.com/oss/grafana?utm_source=grafana_footer"
 }
 
-// Fork: per-datasource permissions are enforced, so Viewers no longer get query access to every datasource.
-var ossEnabledFeatures = map[string]bool{"dspermissions.enforcement": true}
+// Fork: per-datasource permissions are enforced, so Viewers no longer get query access to every datasource;
+// "accesscontrol" turns on the role pickers in the users, teams and service accounts UI (backed by customroles).
+var ossEnabledFeatures = map[string]bool{"dspermissions.enforcement": true, "accesscontrol": true}
 
 func (*OSSLicensingService) EnabledFeatures() map[string]bool {
 	return ossEnabledFeatures

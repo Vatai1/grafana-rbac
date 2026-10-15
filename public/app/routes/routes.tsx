@@ -403,6 +403,28 @@ export function getAppRoutes(): RouteDescriptor[] {
       path: '/admin/upgrading',
       component: SafeDynamicImport(() => import('app/features/admin/UpgradePage')),
     },
+    // Fork: custom roles management
+    {
+      path: '/admin/roles',
+      roles: () => contextSrv.evaluatePermission([AccessControlAction.ActionRolesList]),
+      component: SafeDynamicImport(
+        () => import(/* webpackChunkName: "RolesListPage" */ 'app/features/custom-roles/RolesListPage')
+      ),
+    },
+    {
+      path: '/admin/roles/new',
+      roles: () => contextSrv.evaluatePermission(['roles:write']),
+      component: SafeDynamicImport(
+        () => import(/* webpackChunkName: "RoleEditPage" */ 'app/features/custom-roles/RoleEditPage')
+      ),
+    },
+    {
+      path: '/admin/roles/edit/:uid',
+      roles: () => contextSrv.evaluatePermission([AccessControlAction.ActionRolesList]),
+      component: SafeDynamicImport(
+        () => import(/* webpackChunkName: "RoleEditPage" */ 'app/features/custom-roles/RoleEditPage')
+      ),
+    },
     {
       path: '/admin/users',
       roles: () => contextSrv.evaluatePermission([AccessControlAction.OrgUsersRead, AccessControlAction.UsersRead]),

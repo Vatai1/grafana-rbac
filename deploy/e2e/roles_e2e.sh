@@ -31,6 +31,18 @@ echo "assign team: $(as admin $ACME $G/api/access-control/teams/$TEAM/roles -d '
 as carol $ACME "$G/api/access-control/user/permissions?reloadcache=true" >/dev/null
 echo "carol via team: $(sees carol)"
 as admin $ACME -X DELETE $G/api/access-control/roles/alicerole >/dev/null
+# role picker endpoints (PUT replaces the set, search feeds the users table)
+echo "put carol [finreader]: $(as admin $ACME -X PUT $G/api/access-control/users/$(id carol)/roles -d '{"roleUids":["finreader"]}' | jq -c .) -> $(as admin $ACME $G/api/access-control/users/$(id carol)/roles | jq -c '[.[].uid]')"
+SEARCH=$(jq -nc --argjson c "$(id carol)" --argjson b "$(id bob)" --argjson o "$ACME" '{userIds:[$c,$b],orgId:$o}')
+echo "search users roles: $(as admin $ACME $G/api/access-control/users/roles/search -d "$SEARCH" | jq -c 'map_values([.[].uid])')"
+echo "assignments: $(as admin $ACME $G/api/access-control/roles/finreader/assignments | jq -c '{users:[.users[].login],teams:[.teams[].name]}')"
+echo "put carol []: $(as admin $ACME -X PUT $G/api/access-control/users/$(id carol)/roles -d '{"roleUids":[]}' | jq -c .) -> $(as admin $ACME $G/api/access-control/users/$(id carol)/roles | jq -c '[.[].uid]')"
+ESC=$(jq -nc '{uid:"escrole",name:"esc-role",permissions:[{action:"users:create"}]}')
+as admin $ACME $G/api/access-control/roles -d "$ESC" >/dev/null
+echo "alice delegatable sees escrole: $(as alice $ACME "$G/api/access-control/roles?delegatable=true" | jq -c '[.[].uid] | index("escrole") != null')"
+echo "alice PUT escrole to carol (escalation): $(code alice $ACME -X PUT $G/api/access-control/users/$(id carol)/roles -d '{"roleUids":["escrole"]}')"
+echo "alice targetOrgId=Globex: $(code alice $ACME "$G/api/access-control/users/$(id carol)/roles?targetOrgId=$GLOBEX")"
+as admin $ACME -X DELETE $G/api/access-control/roles/escrole >/dev/null
 echo "delete role: $(as admin $ACME -X DELETE $G/api/access-control/roles/finreader | jq -c .)"
 as carol $ACME "$G/api/access-control/user/permissions?reloadcache=true" >/dev/null
 echo "carol after role deleted: $(sees carol)"

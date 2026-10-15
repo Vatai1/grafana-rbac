@@ -22,7 +22,7 @@ esac
 
 echo "==> backend linux/$ARCH ($VERSION, $COMMIT)"
 (cd .. && GOOS=linux GOARCH=$ARCH CGO_ENABLED=0 go build \
-  -ldflags "-X main.version=$VERSION -X main.commit=$COMMIT -X main.buildBranch=$(git rev-parse --abbrev-ref HEAD)" \
+  -ldflags "-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.buildBranch=$(git rev-parse --abbrev-ref HEAD)" \
   -o "deploy/bin/linux-$ARCH/grafana" ./pkg/cmd/grafana)
 
 echo "==> frontend (native linux/$HOST_ARCH, shared by all image platforms)"

@@ -12778,6 +12778,10 @@
     "users": {
       "subtitle": "Приглашение пользователей и назначение ролей",
       "title": "Пользователи"
+    },
+    "custom-roles": {
+      "title": "Роли",
+      "subtitle": "Кастомные роли из набора разрешений, назначаемые пользователям и командам"
     }
   },
   "navigation": {
@@ -17803,6 +17807,34 @@
     },
     "suggestions": {
       "scatter-plot": "Точечная диаграмма"
+    }
+  },
+  "custom-roles": {
+    "list": {
+      "name": "Название",
+      "description": "Описание",
+      "permissions": "Разрешения",
+      "delete": "Удалить роль",
+      "new": "Новая роль",
+      "empty": "Кастомных ролей пока нет",
+      "delete-body": "Роль будет снята со всех пользователей и команд.",
+      "delete-confirm": "Удалить"
+    },
+    "edit": {
+      "new": "Новая роль",
+      "name": "Название",
+      "name-desc": "Буквы, цифры, «.», «_», «-» и «:»",
+      "display-name": "Отображаемое имя",
+      "description": "Описание",
+      "permissions": "Разрешения",
+      "permissions-help": "Действие, например dashboards:read, datasources:query; область (scope), например folders:uid:<uid>, datasources:uid:<uid> или * (пусто — любая).",
+      "remove-permission": "Удалить разрешение",
+      "add-permission": "Добавить разрешение",
+      "save": "Сохранить",
+      "users": "Пользователи",
+      "teams": "Команды",
+      "unassign": "Снять назначение",
+      "assign": "Назначить"
     }
   }
 }
