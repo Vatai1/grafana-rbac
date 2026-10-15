@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/grafana/grafana/pkg/api/routing"
+	"github.com/grafana/grafana/pkg/apimachinery/errutil"
 	"github.com/grafana/grafana/pkg/infra/db"
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/accesscontrol/resourcepermissions"
@@ -31,6 +32,9 @@ var DatasourceAdminActions = append(DatasourceEditActions, datasources.ActionPer
 
 const datasourcePermissionsRoleGroup = "Data sources"
 
+// errutil-typed so the permissions API answers 404 (not 500) for unknown or other-org datasources.
+var errDatasourceNotFound = errutil.NotFound("datasources.permissions.notFound", errutil.WithPublicMessage("Data source not found"))
+
 var _ accesscontrol.DatasourcePermissionsService = new(DatasourcePermissionsService)
 
 type DatasourcePermissionsService struct {
@@ -54,7 +58,7 @@ func ProvideDatasourcePermissionsService(
 					return err
 				}
 				if !ok {
-					return datasources.ErrDataSourceNotFound
+					return errDatasourceNotFound.Errorf("data source %q not found in org %d", resourceID, orgID)
 				}
 				return nil
 			})

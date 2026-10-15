@@ -37,8 +37,10 @@ docker login
 
 ```sh
 cd deploy && ./setup.sh > e2e/pw.txt   # пароли тестовых пользователей (файл в .gitignore)
-bash e2e/ds_e2e.sh && bash e2e/roles_e2e.sh
+bash e2e/ds_e2e.sh && bash e2e/roles_e2e.sh && bash e2e/security_e2e.sh
 go test ./pkg/services/datasources/guardian/ ./pkg/services/accesscontrol/customroles/
 ```
+
+Аудит безопасности и остаточные риски — [SECURITY.md](SECURITY.md).
 
 Изменения прав применяются с задержкой до 30–60 с из-за штатных кэшей Grafana (`GF_AUTHORIZATION_CACHE_TTL`, кэш прав команд).

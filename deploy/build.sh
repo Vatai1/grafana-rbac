@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds the Grafana fork image (run from anywhere; sources are the repo root, artifacts land in deploy/).
 #   ./build.sh dev           native arch, then restarts the local docker compose stack
+#   SKIP_FRONTEND=1 ...      reuse deploy/public-build when only Go code changed
 #   ./build.sh push [tag]    linux/amd64 image pushed as $IMAGE:<tag> and $IMAGE:latest (run `docker login` first)
 #                            IMAGE defaults to vatai12/grafana-rbac, tag to <grafana version>-<commit>
 #
@@ -25,10 +26,14 @@ echo "==> backend linux/$ARCH ($VERSION, $COMMIT)"
   -ldflags "-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.buildBranch=$(git rev-parse --abbrev-ref HEAD)" \
   -o "deploy/bin/linux-$ARCH/grafana" ./pkg/cmd/grafana)
 
-echo "==> frontend (native linux/$HOST_ARCH, shared by all image platforms)"
-rm -rf public-build .js-out
-docker build --build-arg JS_PLATFORM="linux/$HOST_ARCH" --target js-assets --output type=local,dest=.js-out ..
-mv .js-out/public public-build && rm -rf .js-out
+if [ -n "${SKIP_FRONTEND:-}" ] && [ -d public-build ]; then
+  echo "==> frontend: reusing public-build/ (SKIP_FRONTEND set)"
+else
+  echo "==> frontend (native linux/$HOST_ARCH, shared by all image platforms)"
+  rm -rf public-build .js-out
+  docker build --build-arg JS_PLATFORM="linux/$HOST_ARCH" --target js-assets --output type=local,dest=.js-out ..
+  mv .js-out/public public-build && rm -rf .js-out
+fi
 
 if [ "$MODE" = dev ]; then
   docker compose up -d --build

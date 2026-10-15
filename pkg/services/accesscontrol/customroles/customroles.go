@@ -5,6 +5,7 @@ package customroles
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -367,6 +368,9 @@ func (a *API) listAssigned(t target) func(c *contextmodel.ReqContext) response.R
 	}
 }
 
+// maxSearchUsers bounds the per-user queries a single search request can trigger.
+const maxSearchUsers = 1000
+
 type searchUsersRolesCmd struct {
 	UserIDs []int64 `json:"userIds"`
 	OrgID   int64   `json:"orgId"`
@@ -377,6 +381,9 @@ func (a *API) searchUsersRoles(c *contextmodel.ReqContext) response.Response {
 	var cmd searchUsersRolesCmd
 	if err := web.Bind(c.Req, &cmd); err != nil {
 		return response.Error(http.StatusBadRequest, "Bad request data", err)
+	}
+	if len(cmd.UserIDs) > maxSearchUsers {
+		return response.Error(http.StatusBadRequest, fmt.Sprintf("At most %d userIds per request", maxSearchUsers), nil)
 	}
 	orgID, resp := targetOrg(c, cmd.OrgID)
 	if resp != nil {
