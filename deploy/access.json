@@ -1,16 +1,35 @@
 {
   "workspaces": {
     "Acme": {
-      "users": { "alice": "Admin", "bob": "Editor", "carol": "Viewer" },
+      "users": {
+        "alice": "Admin",
+        "bob": "Editor",
+        "carol": "Viewer"
+      },
       "folders": {
-        "Sales":   { "bob": "Edit", "carol": "View" },
-        "Finance": { "bob": "View" }
+        "Sales": {
+          "bob": "Edit",
+          "carol": "View"
+        },
+        "Finance": {
+          "bob": "View"
+        }
+      },
+      "datasources": {
+        "sales-db": {
+          "bob": "Query",
+          "role:Editor": "Query"
+        }
       }
     },
     "Globex": {
-      "users": { "dave": "Viewer" },
+      "users": {
+        "dave": "Viewer"
+      },
       "folders": {
-        "Ops": { "dave": "View" }
+        "Ops": {
+          "dave": "View"
+        }
       }
     }
   }

@@ -20,7 +20,7 @@
 cd deploy
 export GF_ADMIN_PASSWORD=...        # пароль admin при первом старте
 ./build.sh dev                      # бэкенд + фронтенд + docker compose (Grafana :3001, PostgreSQL)
-./setup.sh                          # воркспейсы, пользователи и права из access.json, перезагрузка YAML-ролей
+./setup.sh                          # из access.json: воркспейсы, пользователи, права на папки и источники данных; перезагрузка YAML-ролей
 ```
 
 ## Сборка и публикация x86-образа

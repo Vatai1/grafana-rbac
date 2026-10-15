@@ -3,6 +3,7 @@
 #   workspace = Grafana org (users never see orgs they are not in)
 #   users     = login -> org role (Admin|Editor|Viewer)
 #   folders   = folder -> {login: View|Edit|Admin}; ONLY listed users see it (org Admins see all)
+#   datasources = datasource -> {login | team:<name> | role:Viewer|Editor: Query|Edit|Admin}; ONLY listed ones can use it
 # Users from access.json are removed from orgs they're no longer listed in.
 # Users not in access.json (e.g. admin) are never touched.
 set -euo pipefail
@@ -64,6 +65,38 @@ while read -r ws; do
   done < <(jq -r --arg ws "$ws" '.workspaces[$ws].folders // {} | keys[]' "$CFG")
 done < <(jq -r '.workspaces | keys[]' "$CFG")
 
-# 5. custom roles from provisioning/access-control/*.yaml (re-applied now that users and orgs exist)
+# 5. datasources: {name: {subject: Query|Edit|Admin}}, subject = login | team:<name> | role:Viewer|Editor.
+#    Listed subjects get exactly that level; every other directly granted (managed) access is removed.
+#    Org Admins always keep access; access coming from custom roles is managed by the roles themselves.
+subject() { # orgId subject -> JSON permission target, empty if unknown
+  case $2 in
+    role:*) jq -nc --arg r "${2#role:}" '{builtInRole:$r}' ;;
+    team:*) get "/api/teams/search?name=$(uri "${2#team:}")" "$1" | jq -c '.teams[0].id // empty | {teamId:.}' ;;
+    *)      get "/api/users/lookup?loginOrEmail=$(uri "$2")" | jq -c '.id // empty | {userId:.}' ;;
+  esac
+}
+while read -r ws; do
+  oid=$(org_id "$ws")
+  while read -r ds; do
+    [ -n "$ds" ] || continue
+    duid=$(get "/api/datasources/name/$(uri "$ds")" "$oid" | jq -r '.uid // empty')
+    if [ -z "$duid" ]; then echo "skip datasource $ws/$ds: not found" >&2; continue; fi
+    want='[]'
+    while IFS=$'\t' read -r subj level; do
+      t=$(subject "$oid" "$subj")
+      if [ -z "$t" ]; then echo "skip $ws/$ds subject $subj: not found" >&2; continue; fi
+      want=$(jq -c --argjson t "$t" --arg l "$level" '. + [$t + {permission:$l}]' <<<"$want")
+    done < <(jq -r --arg ws "$ws" --arg ds "$ds" '.workspaces[$ws].datasources[$ds] | to_entries[] | "\(.key)\t\(.value)"' "$CFG")
+    # revoke managed grants that are not wanted (basic role Admin is left alone)
+    body=$(get "/api/access-control/datasources/$duid" "$oid" | jq -c --argjson want "$want" '
+      [.[] | select(.isManaged) | select(.builtInRole != "Admin")
+       | if .userId then {userId} elif .teamId then {teamId} else {builtInRole} end] | unique
+      | map(select(. as $c | $want | map(del(.permission)) | index($c) | not) + {permission:""})
+      | {permissions: (. + $want)}')
+    api POST "/api/access-control/datasources/$duid" "$body" "$oid" >/dev/null
+  done < <(jq -r --arg ws "$ws" '.workspaces[$ws].datasources // {} | keys[]' "$CFG")
+done < <(jq -r '.workspaces | keys[]' "$CFG")
+
+# 6. custom roles from provisioning/access-control/*.yaml (re-applied now that users and orgs exist)
 api POST /api/admin/provisioning/access-control/reload >/dev/null
 echo "done"
