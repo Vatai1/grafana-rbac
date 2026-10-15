@@ -2,6 +2,7 @@ package guardian
 
 import (
 	"github.com/grafana/grafana/pkg/apimachinery/identity"
+	"github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/datasources"
 )
 
@@ -15,12 +16,14 @@ type DatasourceGuardian interface {
 	FilterDatasourcesByQueryPermissions([]*datasources.DataSource) ([]*datasources.DataSource, error)
 }
 
-func ProvideGuardian() *OSSProvider {
-	return &OSSProvider{}
+func ProvideGuardian(ac accesscontrol.AccessControl) *OSSProvider {
+	return &OSSProvider{ac: ac}
 }
 
-type OSSProvider struct{}
+type OSSProvider struct {
+	ac accesscontrol.AccessControl
+}
 
 func (p *OSSProvider) New(orgID int64, user identity.Requester, dataSources ...datasources.DataSource) DatasourceGuardian {
-	return &AllowGuardian{}
+	return &rbacGuardian{ac: p.ac, user: user, dataSources: dataSources}
 }

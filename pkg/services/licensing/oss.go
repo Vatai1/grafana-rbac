@@ -41,12 +41,15 @@ func (l *OSSLicensingService) LicenseURL(showAdminLicensingPage bool) string {
 	return "https://grafana.com/oss/grafana?utm_source=grafana_footer"
 }
 
+// Fork: per-datasource permissions are enforced, so Viewers no longer get query access to every datasource.
+var ossEnabledFeatures = map[string]bool{"dspermissions.enforcement": true}
+
 func (*OSSLicensingService) EnabledFeatures() map[string]bool {
-	return map[string]bool{}
+	return ossEnabledFeatures
 }
 
 func (*OSSLicensingService) FeatureEnabled(feature string) bool {
-	return false
+	return ossEnabledFeatures[feature]
 }
 
 func ProvideService(cfg *setting.Cfg, hooksService *hooks.HooksService) *OSSLicensingService {
@@ -61,7 +64,7 @@ func ProvideService(cfg *setting.Cfg, hooksService *hooks.HooksService) *OSSLice
 
 		if adminNode := indexData.NavTree.FindById(navtree.NavIDCfgGeneral); adminNode != nil {
 			adminNode.Children = append(adminNode.Children, &navtree.NavLink{
-				Text:       "Stats and license",
+				Text:       "Stats",
 				Id:         "upgrading",
 				Url:        l.LicenseURL(req.IsGrafanaAdmin),
 				Icon:       "unlock",

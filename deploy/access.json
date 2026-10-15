@@ -1,0 +1,17 @@
+{
+  "workspaces": {
+    "Acme": {
+      "users": { "alice": "Admin", "bob": "Editor", "carol": "Viewer" },
+      "folders": {
+        "Sales":   { "bob": "Edit", "carol": "View" },
+        "Finance": { "bob": "View" }
+      }
+    },
+    "Globex": {
+      "users": { "dave": "Viewer" },
+      "folders": {
+        "Ops": { "dave": "View" }
+      }
+    }
+  }
+}

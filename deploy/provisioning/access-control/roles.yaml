@@ -1,0 +1,23 @@
+# Custom roles, loaded on startup and by POST /api/admin/provisioning/access-control/reload
+# (setup.sh calls reload after creating users). Format follows Grafana Enterprise; orgName and users are fork extensions.
+apiVersion: 2
+
+roles:
+  - uid: globex-ds-reader
+    name: datasource-reader
+    displayName: Data source reader
+    description: Query all data sources in Globex.
+    orgName: Globex
+    permissions:
+      - action: datasources:read
+        scope: datasources:*
+      - action: datasources:query
+        scope: datasources:*
+
+teams: []
+
+users:
+  - login: dave
+    orgName: Globex
+    roles:
+      - uid: globex-ds-reader

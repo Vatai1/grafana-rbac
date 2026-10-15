@@ -29,6 +29,7 @@ import (
 	pluginassets2 "github.com/grafana/grafana/pkg/plugins/pluginassets"
 	"github.com/grafana/grafana/pkg/plugins/pluginassets/modulehash"
 	"github.com/grafana/grafana/pkg/plugins/pluginscdn"
+	"github.com/grafana/grafana/pkg/services/accesscontrol/actest"
 	accesscontrolmock "github.com/grafana/grafana/pkg/services/accesscontrol/mock"
 	"github.com/grafana/grafana/pkg/services/apiserver/endpoints/request"
 	"github.com/grafana/grafana/pkg/services/authn/authntest"
@@ -115,7 +116,7 @@ func setupTestEnvironment(t *testing.T, cfg *setting.Cfg, features featuremgmt.F
 		tracer:                tracing.InitializeTracerForTest(),
 		DataSourcesService:    &datafakes.FakeDataSourceService{},
 
-		dsGuardian:              guardian.ProvideGuardian(),
+		dsGuardian:              guardian.ProvideGuardian(actest.FakeAccessControl{ExpectedEvaluate: true}),
 		publicDashboardsService: &publicdashboards.FakePublicDashboardService{},
 	}
 

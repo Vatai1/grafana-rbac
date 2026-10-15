@@ -56,6 +56,10 @@ COPY emails emails
 # Set the build argument according to default or argument passed
 RUN yarn ${JS_YARN_BUILD_FLAG}
 
+# Fork: only the built frontend, for `--target js-assets --output type=local` (skips exporting node_modules)
+FROM scratch AS js-assets
+COPY --from=js-builder /tmp/grafana/public /public
+
 # Golang build stage
 FROM ${GO_IMAGE} AS go-builder
 

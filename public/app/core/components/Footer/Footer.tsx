@@ -25,13 +25,6 @@ export let getFooterLinks = (): FooterLink[] => {
     },
     {
       target: '_blank',
-      id: 'support',
-      text: t('nav.help/support', 'Support'),
-      icon: 'question-circle',
-      url: 'https://grafana.com/products/enterprise/?utm_source=grafana_footer',
-    },
-    {
-      target: '_blank',
       id: 'community',
       text: t('nav.help/community', 'Community'),
       icon: 'comments-alt',

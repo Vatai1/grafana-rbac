@@ -587,7 +587,10 @@ func Initialize(ctx context.Context, cfg *setting.Cfg, opts server.Options, apiO
 	if err != nil {
 		return nil, err
 	}
-	datasourcePermissionsService := ossaccesscontrol.ProvideDatasourcePermissionsService(cfg, featureToggles, sqlStore)
+	datasourcePermissionsService, err := ossaccesscontrol.ProvideDatasourcePermissionsService(cfg, featureToggles, routeRegisterImpl, sqlStore, accessControl, ossLicensingService, acimplService, teamimplService, userimplService, actionSetService, eventualRestConfigProvider)
+	if err != nil {
+		return nil, err
+	}
 	orgRoleMapper := connectors.ProvideOrgRoleMapper(cfg, orgService)
 	socialService := socialimpl.ProvideService(cfg, featureToggles, usageStats, bundleregistryService, remoteCache, orgRoleMapper, ssosettingsimplService)
 	loginStore, err := authinfoimpl.ProvideStore(ctx, legacyDatabaseProvider, secretsService)
@@ -641,7 +644,7 @@ func Initialize(ctx context.Context, cfg *setting.Cfg, opts server.Options, apiO
 		return nil, err
 	}
 	pluginInstaller := manager4.ProvideInstaller(pluginManagementCfg, inMemory, loaderLoader, repoManager, serviceregistrationService, acimplService)
-	ossProvider := guardian.ProvideGuardian()
+	ossProvider := guardian.ProvideGuardian(accessControl)
 	cacheServiceImpl := service6.ProvideCacheService(cacheService, sqlStore, ossProvider)
 	shortURLService := shorturlimpl.ProvideService(sqlStore)
 	queryHistoryService := queryhistory.ProvideService(cfg, sqlStore, routeRegisterImpl, accessControl, featureToggles, eventualRestConfigProvider)
@@ -1346,7 +1349,10 @@ func InitializeForTest(ctx context.Context, t sqlutil.ITestDB, testingT interfac
 	if err != nil {
 		return nil, err
 	}
-	datasourcePermissionsService := ossaccesscontrol.ProvideDatasourcePermissionsService(cfg, featureToggles, sqlStore)
+	datasourcePermissionsService, err := ossaccesscontrol.ProvideDatasourcePermissionsService(cfg, featureToggles, routeRegisterImpl, sqlStore, accessControl, ossLicensingService, acimplService, teamimplService, userimplService, actionSetService, eventualRestConfigProvider)
+	if err != nil {
+		return nil, err
+	}
 	oauthtokentestService := oauthtokentest.ProvideService()
 	ossCachingService := caching.ProvideCachingService()
 	cachingServiceClient := caching.ProvideCachingServiceClient(ossCachingService, featureToggles)
@@ -1389,7 +1395,7 @@ func InitializeForTest(ctx context.Context, t sqlutil.ITestDB, testingT interfac
 		return nil, err
 	}
 	pluginInstaller := manager4.ProvideInstaller(pluginManagementCfg, inMemory, loaderLoader, repoManager, serviceregistrationService, acimplService)
-	ossProvider := guardian.ProvideGuardian()
+	ossProvider := guardian.ProvideGuardian(accessControl)
 	cacheServiceImpl := service6.ProvideCacheService(cacheService, sqlStore, ossProvider)
 	userAuthTokenService, err := authimpl.ProvideUserAuthTokenService(ctx, legacyDatabaseProvider, serverLockService, quotaService, secretsService, configProvider, tracingService, featureToggles)
 	if err != nil {

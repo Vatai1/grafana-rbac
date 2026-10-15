@@ -2,9 +2,7 @@ import { css } from '@emotion/css';
 import { useEffect, useState } from 'react';
 
 import { type GrafanaTheme2 } from '@grafana/data';
-import { GrafanaEdition } from '@grafana/data/internal';
 import { t, Trans } from '@grafana/i18n';
-import { config } from '@grafana/runtime';
 import { useUserStorage } from '@grafana/runtime/internal';
 import { Text, Stack, useStyles2, Button, LinkButton } from '@grafana/ui';
 import { CloudEnterpriseBadge } from 'app/core/components/Branding/CloudEnterpriseBadge';
@@ -104,14 +102,7 @@ function getStyles(theme: GrafanaTheme2) {
   };
 }
 
+// Fork: drives every Grafana Enterprise upsell (feature highlights, ads, upgrade prompts); always off.
 export function isOpenSourceBuildOrUnlicenced() {
-  if (config.buildInfo.edition === GrafanaEdition.OpenSource) {
-    return true;
-  }
-
-  if (config.licenseInfo.stateInfo !== 'Licensed') {
-    return true;
-  }
-
   return false;
 }

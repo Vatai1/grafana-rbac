@@ -55,7 +55,7 @@ func TestDataSourcesProxy_userLoggedIn(t *testing.T) {
 			DataSourcesService: &dataSourcesServiceMock{
 				expectedDatasources: ds,
 			},
-			dsGuardian: guardian.ProvideGuardian(),
+			dsGuardian: guardian.ProvideGuardian(actest.FakeAccessControl{ExpectedEvaluate: true}),
 		}
 		sc.handlerFunc = hs.GetDataSources
 		sc.fakeReq("GET", "/api/datasources").exec()

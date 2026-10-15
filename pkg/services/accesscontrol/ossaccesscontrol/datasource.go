@@ -3,12 +3,16 @@ package ossaccesscontrol
 import (
 	"context"
 
-	"github.com/grafana/grafana/pkg/apimachinery/identity"
+	"github.com/grafana/grafana/pkg/api/routing"
 	"github.com/grafana/grafana/pkg/infra/db"
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/accesscontrol/resourcepermissions"
+	"github.com/grafana/grafana/pkg/services/apiserver"
 	"github.com/grafana/grafana/pkg/services/datasources"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
+	"github.com/grafana/grafana/pkg/services/licensing"
+	"github.com/grafana/grafana/pkg/services/team"
+	"github.com/grafana/grafana/pkg/services/user"
 	"github.com/grafana/grafana/pkg/setting"
 	"go.opentelemetry.io/otel"
 )
@@ -22,75 +26,58 @@ var DatasourceQueryActions = []string{
 	datasources.ActionQuery,
 }
 
-func ProvideDatasourcePermissionsService(cfg *setting.Cfg, features featuremgmt.FeatureToggles, db db.DB) *DatasourcePermissionsService {
-	return &DatasourcePermissionsService{
-		store: resourcepermissions.NewStore(cfg, db, features),
-	}
-}
+var DatasourceEditActions = append(DatasourceQueryActions, datasources.ActionWrite, datasources.ActionDelete)
+var DatasourceAdminActions = append(DatasourceEditActions, datasources.ActionPermissionsRead, datasources.ActionPermissionsWrite)
+
+const datasourcePermissionsRoleGroup = "Data sources"
 
 var _ accesscontrol.DatasourcePermissionsService = new(DatasourcePermissionsService)
 
 type DatasourcePermissionsService struct {
-	store resourcepermissions.Store
+	*resourcepermissions.Service
 }
 
-func (e DatasourcePermissionsService) GetPermissions(ctx context.Context, user identity.Requester, resourceID string) ([]accesscontrol.ResourcePermission, error) {
-	return nil, nil
-}
-
-func (e DatasourcePermissionsService) SetUserPermission(ctx context.Context, orgID int64, user accesscontrol.User, resourceID, permission string) (*accesscontrol.ResourcePermission, error) {
-	return nil, nil
-}
-
-func (e DatasourcePermissionsService) SetTeamPermission(ctx context.Context, orgID, teamID int64, resourceID, permission string) (*accesscontrol.ResourcePermission, error) {
-	return nil, nil
-}
-
-func (e DatasourcePermissionsService) SetBuiltInRolePermission(ctx context.Context, orgID int64, builtInRole string, resourceID string, permission string) (*accesscontrol.ResourcePermission, error) {
-	return nil, nil
-}
-
-// SetPermissions sets managed permissions for a datasource in OSS. This ensures that Viewers and Editors maintain query access to a data source
-// if an OSS/unlicensed instance is upgraded to Enterprise/licensed.
-// https://github.com/grafana/identity-access-team/issues/672
-func (e DatasourcePermissionsService) SetPermissions(ctx context.Context, orgID int64, resourceID string, commands ...accesscontrol.SetResourcePermissionCommand) ([]accesscontrol.ResourcePermission, error) {
-	ctx, span := tracer.Start(ctx, "accesscontrol.ossaccesscontrol.SetPermissions")
-	defer span.End()
-
-	dbCommands := make([]resourcepermissions.SetResourcePermissionsCommand, 0, len(commands))
-	for _, cmd := range commands {
-		// Only set query permissions for built-in roles; do not set permissions for data sources with * as UID, as this would grant wildcard permissions
-		if cmd.Permission != "Query" || cmd.BuiltinRole == "" || resourceID == "*" {
-			continue
-		}
-		actions := DatasourceQueryActions
-
-		dbCommands = append(dbCommands, resourcepermissions.SetResourcePermissionsCommand{
-			BuiltinRole: cmd.BuiltinRole,
-			SetResourcePermissionCommand: resourcepermissions.SetResourcePermissionCommand{
-				Actions:           actions,
-				Resource:          datasources.ScopeRoot,
-				ResourceID:        resourceID,
-				ResourceAttribute: "uid",
-				Permission:        cmd.Permission,
-			},
-		})
-	}
-
-	return e.store.SetResourcePermissions(ctx, orgID, dbCommands, resourcepermissions.ResourceHooks{})
-}
-
-func (e DatasourcePermissionsService) DeleteResourcePermissions(ctx context.Context, orgID int64, resourceID string) error {
-	ctx, span := tracer.Start(ctx, "accesscontrol.ossaccesscontrol.DeleteResourcePermissions")
-	defer span.End()
-
-	return e.store.DeleteResourcePermissions(ctx, orgID, &resourcepermissions.DeleteResourcePermissionsCmd{
+func ProvideDatasourcePermissionsService(
+	cfg *setting.Cfg, features featuremgmt.FeatureToggles, router routing.RouteRegister, sql db.DB, ac accesscontrol.AccessControl,
+	license licensing.Licensing, service accesscontrol.Service, teamService team.Service, userService user.Service,
+	actionSetService resourcepermissions.ActionSetService, restConfigProvider apiserver.DirectRestConfigProvider,
+) (*DatasourcePermissionsService, error) {
+	options := resourcepermissions.Options{
 		Resource:          datasources.ScopeRoot,
 		ResourceAttribute: "uid",
-		ResourceID:        resourceID,
-	})
-}
-
-func (e DatasourcePermissionsService) MapActions(permission accesscontrol.ResourcePermission) string {
-	return ""
+		// Queried directly: the datasource service depends on this service, so injecting it here would be a cycle.
+		// WithDbSession reuses the caller's transaction, so this also sees a datasource being created in it.
+		ResourceValidator: func(ctx context.Context, orgID int64, resourceID string) error {
+			return sql.WithDbSession(ctx, func(sess *db.Session) error {
+				ok, err := sess.Table("data_source").Where("org_id = ? AND uid = ?", orgID, resourceID).Exist()
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return datasources.ErrDataSourceNotFound
+				}
+				return nil
+			})
+		},
+		Assignments: resourcepermissions.Assignments{
+			Users:           true,
+			Teams:           true,
+			BuiltInRoles:    true,
+			ServiceAccounts: true,
+		},
+		PermissionsToActions: map[string][]string{
+			"Query": DatasourceQueryActions,
+			"Edit":  DatasourceEditActions,
+			"Admin": DatasourceAdminActions,
+		},
+		ReaderRoleName:     permissionReaderRoleName,
+		WriterRoleName:     permissionWriterRoleName,
+		RoleGroup:          datasourcePermissionsRoleGroup,
+		RestConfigProvider: restConfigProvider,
+	}
+	srv, err := resourcepermissions.New(cfg, options, features, router, license, ac, service, sql, teamService, userService, actionSetService)
+	if err != nil {
+		return nil, err
+	}
+	return &DatasourcePermissionsService{srv}, nil
 }

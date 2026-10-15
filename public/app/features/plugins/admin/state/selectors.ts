@@ -67,7 +67,8 @@ export const selectPlugins = (filters: PluginFilters) =>
         return false;
       }
 
-      if (filters.isEnterprise !== undefined && plugin.isEnterprise !== filters.isEnterprise) {
+      // Fork: Enterprise-only plugins cannot run here, so they are not listed at all.
+      if (plugin.isEnterprise) {
         return false;
       }
 

@@ -3,6 +3,7 @@ package acimpl
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -27,6 +28,7 @@ import (
 	"github.com/grafana/grafana/pkg/plugins"
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/accesscontrol/api"
+	"github.com/grafana/grafana/pkg/services/accesscontrol/customroles"
 	"github.com/grafana/grafana/pkg/services/accesscontrol/database"
 	"github.com/grafana/grafana/pkg/services/accesscontrol/migrator"
 	"github.com/grafana/grafana/pkg/services/accesscontrol/permreg"
@@ -52,7 +54,7 @@ var SharedWithMeFolderPermission = accesscontrol.Permission{
 	Scope:  folder.ScopeFoldersProvider.GetResourceScopeUID(folder.SharedWithMeFolderUID),
 }
 
-var OSSRolesPrefixes = []string{accesscontrol.ManagedRolePrefix, accesscontrol.ExternalServiceRolePrefix}
+var OSSRolesPrefixes = []string{accesscontrol.ManagedRolePrefix, accesscontrol.ExternalServiceRolePrefix, customroles.RolePrefix}
 
 func ProvideService(
 	cfg *setting.Cfg, db db.DB, routeRegister routing.RouteRegister, cache *localcache.CacheService,
@@ -74,7 +76,13 @@ func ProvideService(
 	)
 
 	api.NewAccessControlAPI(routeRegister, accessControl, service, userService).RegisterAPIEndpoints()
+	acProvisioningDir := filepath.Join(cfg.ProvisioningPath, "access-control")
+	customroles.RegisterAPI(routeRegister, db, accessControl, service, acProvisioningDir)
+	customroles.Provision(context.Background(), db, acProvisioningDir)
 	if err := accesscontrol.DeclareFixedRoles(service); err != nil {
+		return nil, err
+	}
+	if err := service.DeclareFixedRoles(customroles.FixedRoles...); err != nil {
 		return nil, err
 	}
 
