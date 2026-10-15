@@ -1,0 +1,28 @@
+name: Changelog generator
+description: Generates and publishes a changelog for the given release version
+inputs:
+  target:
+    description: Target tag, branch or commit hash for the changelog
+    required: true
+  version:
+    description: >-
+      Semver version being released (e.g. v10.0.0), used to look up the previous release tag when
+      `previous` isn't given. Falls back to `target`, so only needed when target isn't itself a
+      semver-parseable tag.
+    required: false
+  previous:
+    description: Previous tag, branch or commit hash to start changelog from
+    required: false
+  github_token:
+    description: GitHub token with read/write access to all necessary repositories
+    required: true
+  output_file:
+    description: A file to store resulting changelog markdown
+    required: false
+outputs:
+  changelog:
+    description: Changelog contents between the two given versions in Markdown format
+runs:
+  using: 'node20'
+  main: 'index.js'
+  
