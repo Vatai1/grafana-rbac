@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 # Security probe (plan step 7): every way to reach a datasource as a user WITHOUT access to it.
 # Expectation: no 2xx anywhere. Needs ./setup.sh > e2e/pw.txt and the sales-db datasource from ds_e2e.sh.
-P=$(dirname "$0")/pw.txt
-pw() { grep "user $1 " "$P" | awk '{print $NF}'; }
-G=localhost:3001
-A="admin:${GF_ADMIN_PASSWORD:-admin}"
+. "$(dirname "$0")/lib.sh"
 ACME=$(curl -s -u "$A" $G/api/orgs/name/Acme | jq .id)
 DS=$(curl -s -u "$A" -H "X-Grafana-Org-Id: $ACME" $G/api/datasources/name/sales-db | jq -r .uid)
 ID=$(curl -s -u "$A" -H "X-Grafana-Org-Id: $ACME" $G/api/datasources/name/sales-db | jq -r .id)

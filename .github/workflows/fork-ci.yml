@@ -1,0 +1,80 @@
+# CI for the grafana-rbac fork. Upstream Grafana workflows are removed from this repo: they need Grafana Labs
+# infrastructure and secrets. Re-delete them after merging a new upstream release.
+name: fork-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Fork packages
+        run: |
+          go test -count=1 \
+            ./pkg/services/accesscontrol/customroles/... \
+            ./pkg/services/accesscontrol/ossaccesscontrol/... \
+            ./pkg/services/accesscontrol/acimpl/... \
+            ./pkg/services/datasources/... \
+            ./pkg/services/licensing/... \
+            ./pkg/services/navtree/navtreeimpl/...
+      - name: HTTP API tests touching datasources
+        run: go test -count=1 ./pkg/api/ -run 'DataSource|Datasource|FrontendSettings'
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build backend (linux/amd64)
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -ldflags "-s -w -X main.version=$(jq -r .version package.json) -X main.commit=${GITHUB_SHA::8}" \
+            -o deploy/bin/linux-amd64/grafana ./pkg/cmd/grafana
+      - name: Frontend assets from the upstream image (API checks do not need the fork UI)
+        run: |
+          cid=$(docker create grafana/grafana:13.2.4)
+          docker cp "$cid:/usr/share/grafana/public" deploy/public-build
+          docker rm "$cid"
+      - name: Start Grafana + PostgreSQL
+        working-directory: deploy
+        run: |
+          pw=$(openssl rand -hex 16)
+          echo "::add-mask::$pw"
+          echo "GF_ADMIN_PASSWORD=$pw" >> "$GITHUB_ENV"
+          GF_ADMIN_PASSWORD=$pw docker compose up -d --build
+          for i in $(seq 90); do curl -sf localhost:3001/api/health && break; sleep 2; done
+      - name: Configure access (setup.sh)
+        working-directory: deploy
+        run: ./setup.sh > e2e/pw.txt
+      - name: e2e - datasource permissions
+        working-directory: deploy
+        run: bash e2e/ds_e2e.sh
+      - name: e2e - custom roles
+        working-directory: deploy
+        run: bash e2e/roles_e2e.sh
+      - name: e2e - security probe
+        working-directory: deploy
+        run: bash e2e/security_e2e.sh
+      - name: Grafana logs on failure
+        if: failure()
+        working-directory: deploy
+        run: docker compose logs grafana | tail -200
