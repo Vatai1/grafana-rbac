@@ -42,7 +42,8 @@ GLOBEX=$(curl -s -u "$A" $G/api/orgs/name/Globex | jq .id)
 GDS=$(curl -s -u "$A" -H "X-Grafana-Org-Id: $GLOBEX" -H Content-Type:application/json $G/api/datasources/name/globex-db | jq -r '.uid // empty')
 [ -n "$GDS" ] || GDS=$(curl -s -u "$A" -H "X-Grafana-Org-Id: $GLOBEX" -H Content-Type:application/json $G/api/datasources -d '{"name":"globex-db","type":"grafana-testdata-datasource","access":"proxy"}' | jq -r .datasource.uid)
 id() { curl -s -u "$A" "$G/api/users/lookup?loginOrEmail=$1" | jq .id; }
-TEAM=$(curl -s -u "$A" -H "X-Grafana-Org-Id: $ACME" "$G/api/teams/search?name=finance-team" | jq '.teams[0].id // 0')
+TEAM=$(curl -s -u "$A" -H "X-Grafana-Org-Id: $ACME" -H Content-Type:application/json $G/api/teams -d '{"name":"security-e2e-team"}' | jq '.teamId // empty')
+[ -n "$TEAM" ] || TEAM=$(curl -s -u "$A" -H "X-Grafana-Org-Id: $ACME" "$G/api/teams/search?name=security-e2e-team" | jq '.teams[0].id')
 GTEAM=$(curl -s -u "$A" -H "X-Grafana-Org-Id: $GLOBEX" -H Content-Type:application/json $G/api/teams -d '{"name":"globex-team"}' | jq '.teamId // empty')
 [ -n "$GTEAM" ] || GTEAM=$(curl -s -u "$A" -H "X-Grafana-Org-Id: $GLOBEX" "$G/api/teams/search?name=globex-team" | jq '.teams[0].id')
 role() { jq -nc --arg u "$1" --arg a "$2" --arg s "$3" '{uid:$u,name:$u,permissions:[{action:$a,scope:$s}]}'; }
