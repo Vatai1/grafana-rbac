@@ -103,7 +103,7 @@ jobs:
         with:
           github_app: grafana-releases-oss
           permission_set: ${{ github.ref_name == 'main' && 'dispatch-downstream-main' || 'dispatch-downstream-release' }} # different branches require different permission sets
-      - uses: actions/github-script@v8
+      - uses: actions/github-script@v9
         env:
           REF: ${{ github.ref_name }}
           VERSION: ${{ needs.setup.outputs.version }}
