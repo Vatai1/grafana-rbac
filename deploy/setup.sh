@@ -11,9 +11,9 @@ G=${GRAFANA_URL:-http://localhost:3001}
 AUTH=admin:${GF_ADMIN_PASSWORD:-admin}
 CFG=${1:-access.json}
 
-get() { curl -s -u "$AUTH" ${2:+-H "X-Grafana-Org-Id: $2"} "$G$1"; }
+get() { curl -s ${CURL_FLAGS:-} -u "$AUTH" ${2:+-H "X-Grafana-Org-Id: $2"} "$G$1"; }
 api() { # method path [json] [orgId]
-  curl -s --fail-with-body -u "$AUTH" -X "$1" -H 'Content-Type: application/json' \
+  curl -s ${CURL_FLAGS:-} --fail-with-body -u "$AUTH" -X "$1" -H 'Content-Type: application/json' \
     ${4:+-H "X-Grafana-Org-Id: $4"} "$G$2" ${3:+-d "$3"}
 }
 uri() { jq -rn --arg s "$1" '$s|@uri'; }

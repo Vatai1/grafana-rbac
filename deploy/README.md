@@ -23,6 +23,10 @@ export GF_ADMIN_PASSWORD=...        # пароль admin при первом с�
 ./setup.sh                          # из access.json: воркспейсы, пользователи, права на папки и источники данных; перезагрузка YAML-ролей
 ```
 
+## Prod
+
+Один сервер + Docker Compose (PostgreSQL, HTTPS через Caddy, ежедневные бэкапы): [prod/README.md](prod/README.md).
+
 ## Сборка и публикация x86-образа
 
 ```sh

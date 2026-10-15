@@ -1,0 +1,85 @@
+# Production: Grafana fork + PostgreSQL + Caddy (automatic HTTPS) + daily database backups.
+# Settings come from .env next to this file (see .env.example).
+name: grafana-rbac-prod
+
+x-db-env: &db-env
+  POSTGRES_DB: grafana
+  POSTGRES_USER: grafana
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+
+services:
+  grafana:
+    image: vatai12/grafana-rbac:${GRAFANA_TAG:?set GRAFANA_TAG in .env}
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      GF_SERVER_DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      GF_SERVER_ROOT_URL: https://${DOMAIN}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:?set GF_ADMIN_PASSWORD in .env}   # used on first start only
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_DATABASE_TYPE: postgres
+      GF_DATABASE_HOST: postgres:5432
+      GF_DATABASE_NAME: grafana
+      GF_DATABASE_USER: grafana
+      GF_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_ORG_CREATE: "false"
+      GF_USERS_VIEWERS_CAN_EDIT: "false"
+      GF_USERS_DEFAULT_LANGUAGE: ru-RU
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_CLOUD_MIGRATION_ENABLED: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../provisioning/access-control:/etc/grafana/provisioning/access-control:ro
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: *db-env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grafana -d grafana"]
+      interval: 5s
+      retries: 20
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+
+  # Daily pg_dump into ./backups, keeps BACKUP_KEEP_DAYS days.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      <<: *db-env
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -o pipefail
+        umask 077   # dumps contain password hashes and encrypted secrets
+        sleep 300   # let Grafana finish migrations before the first dump
+        while true; do
+          f=/backups/grafana-$$(date +%Y%m%d-%H%M%S).sql.gz
+          pg_dump -h postgres -U grafana grafana | gzip > "$$f.tmp" && mv "$$f.tmp" "$$f" && echo "backup ok: $$f" || echo "backup FAILED"
+          find /backups -name 'grafana-*.sql.gz' -mtime +$$KEEP_DAYS -delete
+          sleep 86400
+        done
+    volumes:
+      - ./backups:/backups
+
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    command: caddy reverse-proxy --from ${DOMAIN} --to grafana:3000
+    volumes:
+      - caddy-data:/data
+
+volumes:
+  grafana-data:
+  pg-data:
+  caddy-data:

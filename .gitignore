@@ -299,3 +299,5 @@ debug-storybook.log
 /deploy/public-build/
 /deploy/.js-out/
 /deploy/e2e/pw.txt
+/deploy/prod/.env
+/deploy/prod/backups/
